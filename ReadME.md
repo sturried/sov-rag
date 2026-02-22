@@ -66,7 +66,7 @@ iex> SovNote.InferenceRouter.start_interview("Docker", 40.0, "Docker uses layers
 
 ---
 
-## Troubleshooting (Exam Talking Points)
+## Troubleshooting
 
 | Issue                    | Resolution                                                                          | DevOps Concept              |
 | ------------------------ | ----------------------------------------------------------------------------------- | --------------------------- |
@@ -109,3 +109,5 @@ Response
 {"category":"DevOps","completeness_score":74.13,"wiki_summary":"Kubernetes (), also known as K8s, is an open-source container orchestration system for automating software deployment, scaling, and management. Originally designed by Google, the project is now maintained by a worldwide community of contributors, and the trademark is held by the Cloud Native Computing Foundation.\nThe name Kubernetes comes from the Ancient Greek term κυβερνήτης, kubernḗtēs (helmsman, pilot), which is also the origin of the words cybernetics and (through Latin) governor.","knowledge_gaps":"Low}
 
 Also see image.png for example output from Elixir IEX shell.
+
+**Disclaimer:** Note that this ReadME has been partially written using LLMs.
