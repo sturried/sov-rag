@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-server
+  labels:
+    app: vllm
+spec:
+  replicas: 1 # Scalable depending on cluster size
+  selector:
+    matchLabels:
+      app: vllm
+  template:
+    metadata:
+      labels:
+        app: vllm
+    spec:
+      containers:
+        - name: vllm-container
+          image: vllm/vllm-openai:latest
+          command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+          args:
+            [
+              "--model",
+              "meta-llama/Meta-Llama-3-8B-Instruct",
+              "--gpu-memory-utilization",
+              "0.90",
+            ]
+          ports:
+            - containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-service
+spec:
+  selector:
+    app: vllm
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP # Sovereignty
