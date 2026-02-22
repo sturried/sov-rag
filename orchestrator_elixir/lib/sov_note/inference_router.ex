@@ -70,7 +70,6 @@ defmodule SovNote.InferenceRouter do
 
           case start_interview(topic, score, wiki, text) do
             {:ok, source, response} ->
-              # LOG THE RESPONSE
               Logger.info(
                 "AI Response (Initial) from #{source}: #{response["message"]["content"]}"
               )

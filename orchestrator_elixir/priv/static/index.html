@@ -130,7 +130,7 @@
 
     <script>
       let isGrounded = false;
-      let lastAiQuestion = ""; // Persistent tracker for Socratic context
+      let lastAiQuestion = "";
 
       async function ingestKnowledge() {
         const topicEl = document.getElementById("topic");
@@ -165,7 +165,7 @@
 
           // Start Interview in Right Pane
           appendMessage("ai", data.message);
-          lastAiQuestion = data.message; // Store for the next chat turn
+          lastAiQuestion = data.message;
           isGrounded = true;
           updateStats(data.stats);
         } catch (e) {
@@ -187,13 +187,11 @@
         const userMsg = inputField.value.trim();
         if (!userMsg) return;
 
-        // 1. Show user message immediately
         appendMessage("user", userMsg);
         inputField.value = "";
 
         const topic = document.getElementById("topic").value;
 
-        // 2. Prepare Payload using our persistent variable
         const payload = {
           topic: topic,
           context: `Last Question: ${lastAiQuestion}\nUser Answer: ${userMsg}`,
@@ -233,7 +231,6 @@
         div.innerText = text;
         win.appendChild(div);
 
-        // Use smooth scroll to keep bottom in view
         win.scrollTo({ top: win.scrollHeight, behavior: "smooth" });
       }
 

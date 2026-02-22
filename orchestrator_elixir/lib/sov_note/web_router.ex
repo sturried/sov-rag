@@ -17,17 +17,13 @@ defmodule SovNote.WebRouter do
     topic = conn.body_params["topic"]
     text = conn.body_params["context"]
 
-    # We call the router and handle the variety of successful returns
     case SovNote.InferenceRouter.analyze_and_interview(topic, text) do
-      # Match the 4-tuple (Initial Ingestion)
       {:ok, source, response, score} ->
         send_json_success(conn, source, response, score)
 
-      # Match the 3-tuple (Chat Follow-up)
       {:ok, source, response} ->
         send_json_success(conn, source, response, 0.0)
 
-      # Catch actual errors
       {:error, _type, reason} ->
         Logger.error("Inference Error: #{inspect(reason)}")
         send_resp(conn, 500, Jason.encode!(%{error: "AI Timeout"}))
