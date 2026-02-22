@@ -42,51 +42,81 @@ defmodule SovNote.InferenceRouter do
   end
 
   def analyze_and_interview(topic, text) do
-    payload = Jason.encode!(%{topic: topic, text: text})
+    is_followup = String.contains?(text, "Last Question:")
 
-    Logger.info("Sending to Python: #{payload}")
+    if is_followup do
+      Logger.info("CHAT FOLLOW-UP detected for topic: #{topic}")
 
-    case HTTPoison.post(@python_engine_url, payload, [{"Content-Type", "application/json"}]) do
-      {:ok, %{status_code: 200, body: body}} ->
-        analysis = Jason.decode!(body)
-        Logger.info("Received from Python: #{inspect(analysis)}")
+      case start_interview(topic, 0.0, "Continue Socratic dialogue.", text) do
+        {:ok, source, response} = result ->
+          # LOG THE RESPONSE
+          Logger.info("AI Response (Follow-up) from #{source}: #{response["message"]["content"]}")
+          result
 
-        score = analysis["completeness_score"]
-        wiki = analysis["wiki_summary"]
+        error ->
+          error
+      end
+    else
+      payload = Jason.encode!(%{topic: topic, text: text})
+      Logger.info("INITIAL INGESTION for topic: #{topic}")
 
-        case start_interview(topic, score, wiki) do
-          {:ok, source, response} ->
-            {:ok, source, response, score}
+      case HTTPoison.post(@python_engine_url, payload, [{"Content-Type", "application/json"}]) do
+        {:ok, %{status_code: 200, body: body}} ->
+          analysis = Jason.decode!(body)
+          Logger.info("Python Analysis: #{inspect(analysis)}")
 
-          error ->
-            error
-        end
+          score = analysis["completeness_score"]
+          wiki = analysis["wiki_summary"]
 
-      _error ->
-        case start_interview(topic, 0.0, "Could not fetch wiki context.") do
-          {:ok, source, response} ->
-            {:ok, source, response, 0.0}
+          case start_interview(topic, score, wiki, text) do
+            {:ok, source, response} ->
+              # LOG THE RESPONSE
+              Logger.info(
+                "AI Response (Initial) from #{source}: #{response["message"]["content"]}"
+              )
 
-          error ->
-            error
-        end
+              {:ok, source, response, score}
+
+            error ->
+              error
+          end
+
+        _error ->
+          Logger.error("Python Engine Unreachable. Using fallback context.")
+          start_interview(topic, 0.0, "Fallback context.", text)
+      end
     end
   end
 
-  def start_interview(topic, completeness_score, wiki_context) do
+  def start_interview(topic, completeness_score, wiki_context, user_input) do
+    # Determine if this is a follow-up answer or a fresh note
+    is_followup = String.contains?(user_input, "Last Question:")
+
+    role_instruction =
+      if is_followup do
+        "The user is responding to your previous question. Evaluate their answer based on the reference data and continue the Socratic dialogue."
+      else
+        "The user has submitted a new note. Compare it to the reference data, provide a score, and ask an opening question to start the interview."
+      end
+
     prompt = """
     SYSTEM: You are a strict but encouraging Socratic tutor.
-    CONTEXT: The user is learning about "#{topic}".
-    FACTUAL DATA FROM WIKIPEDIA: "#{wiki_context}"
-    USER NOTE SCORE: #{completeness_score}%
+    #{role_instruction}
+
+    CONTEXT:
+    - Topic: #{topic}
+    - Reference Data: #{wiki_context}
+    - Initial Note Accuracy: #{completeness_score}%
+
+    USER INPUT (Notes or Answer):
+    "#{user_input}"
 
     TASK:
-    1. Compare the user's notes to the Wikipedia data.
-    2. If the user's note is factually incorrect, gently correct them using the Wikipedia data.
-    3. If the score is low, identify a major missing concept.
-    4. Ask ONE challenging question to help them improve.
+    1. Acknowledge the user's input.
+    2. If the user is factually incorrect based on the reference data, gently correct them.
+    3. Ask ONE follow-up question to deepen their understanding.
 
-    Keep your response brief and focused on the topic.
+    Keep your response brief and focused.
     """
 
     process_query(prompt)

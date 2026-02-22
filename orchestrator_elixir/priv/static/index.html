@@ -2,169 +2,248 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SovNote Dashboard</title>
+    <title>SovNote: Sovereign RAG Dashboard</title>
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css"
     />
     <style>
       body {
-        max-width: 800px;
+        max-width: 1200px;
         margin: auto;
         padding: 20px;
+        display: flex;
+        gap: 20px;
+        height: 90vh;
       }
-      .card {
-        border: 1px solid #ccc;
-        padding: 15px;
-        margin-top: 20px;
+      .pane {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid #444;
+        padding: 20px;
         border-radius: 8px;
+        background: #1a1a1a;
+        overflow: hidden;
       }
-      #response {
-        white-space: pre-wrap;
-        background: #222;
-        color: #0f0;
+      h2 {
+        margin-top: 0;
+        color: #007bff;
+        border-bottom: 1px solid #333;
+        padding-bottom: 10px;
+      }
+
+      /* Left Pane Styling */
+      textarea#note-input {
+        flex-grow: 1;
+        margin-bottom: 10px;
+        font-family: monospace;
+      }
+
+      /* Right Pane (Chat) Styling */
+      #chat-window {
+        flex-grow: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 10px;
         padding: 10px;
-        min-height: 50px;
-      }
-      .stat-label {
-        font-weight: bold;
-        color: #555;
-      }
-      .performance-box {
-        margin-top: 15px;
-        padding: 10px;
-        background-color: rgba(255, 255, 255, 0.05);
-        border: 1px dashed #444;
+        background: #111;
         border-radius: 4px;
-        font-size: 0.85em;
-        color: #ccc;
+      }
+      .msg {
+        padding: 8px 12px;
+        border-radius: 15px;
+        max-width: 85%;
+        line-height: 1.4;
+      }
+      .ai {
+        align-self: flex-start;
+        background: #2c3e50;
+        color: #eee;
+        border-bottom-left-radius: 2px;
+      }
+      .user {
+        align-self: flex-end;
+        background: #0056b3;
+        color: white;
+        border-bottom-right-radius: 2px;
       }
 
-      .performance-box span {
-        margin-right: 10px;
+      .performance-mini {
+        font-size: 0.7em;
+        color: #666;
+        display: flex;
+        justify-content: space-between;
+        border-top: 1px solid #333;
+        padding-top: 5px;
       }
-
-      textarea:focus {
-        border-color: #007bff;
-        outline: none;
+      progress {
+        width: 100%;
+        height: 10px;
       }
     </style>
   </head>
   <body>
-    <h1>SovNote: Sovereign AI</h1>
-    <p>
-      Submit your notes for semantic validation against Wikipedia and Socratic
-      interviewing.
-    </p>
-
-    <div class="card">
-      <label for="topic">Topic</label>
+    <div class="pane">
+      <h2>Knowledge Ingestion</h2>
+      <label>Topic</label>
       <input type="text" id="topic" placeholder="e.g., Docker" />
-
-      <label for="text">Your Note</label>
+      <label>Study Notes</label>
       <textarea
-        id="text"
-        rows="5"
-        placeholder="Enter your study notes here..."
+        id="note-input"
+        placeholder="Paste your notes here for validation..."
       ></textarea>
+      <button onclick="ingestKnowledge()">Analyze & Ground AI</button>
 
-      <button onclick="analyze()">Validate & Start Interview</button>
+      <div id="validation-stats" style="display: none; margin-top: 15px">
+        <p><strong>Accuracy:</strong> <span id="score-text">0</span>%</p>
+        <progress id="score-bar" value="0" max="100"></progress>
+        <p style="font-size: 0.8em; color: #888">
+          Source: <mark id="source-label">Pending</mark>
+        </p>
+      </div>
     </div>
 
-    <div id="result-area" style="display: none">
-      <h3>AI Analysis & Interview</h3>
-
-      <p>
-        <span class="stat-label">Inference Source:</span>
-        <mark id="source"></mark>
-      </p>
-
-      <p><span class="stat-label">Completeness Score:</span></p>
-      <progress
-        id="score-bar"
-        value="0"
-        max="100"
-        style="width: 100%"
-      ></progress>
-
-      <div id="response" class="card"></div>
-
-      <div id="stats-area" class="performance-box" style="display: none">
-        <strong>Performance Monitor</strong><br />
-        <span>Tokens: <span id="tokens">0</span></span>
-        <span>Load: <span id="load">0</span>s</span>
-        <span>Total: <span id="total">0</span>s</span>
+    <div class="pane">
+      <h2>Socratic Interview</h2>
+      <div id="chat-window">
+        <div class="msg ai">
+          Please ingest your notes on the left to begin the session.
+        </div>
+      </div>
+      <div style="display: flex; gap: 5px">
+        <input
+          type="text"
+          id="chat-input"
+          placeholder="Answer the AI's question..."
+          onkeypress="if (event.key === 'Enter') sendChat();"
+        />
+        <button onclick="sendChat()">Send</button>
+      </div>
+      <div class="performance-mini">
+        <span>Tokens: <span id="stat-tokens">0</span></span>
+        <span>Lat: <span id="stat-lat">0</span>s</span>
       </div>
     </div>
 
     <script>
-      let chatHistory = "";
+      let isGrounded = false;
+      let lastAiQuestion = ""; // Persistent tracker for Socratic context
 
-      async function analyze() {
+      async function ingestKnowledge() {
+        const topicEl = document.getElementById("topic");
+        const noteEl = document.getElementById("note-input");
         const btn = document.querySelector("button");
-        const resultArea = document.getElementById("result-area");
-        const statsArea = document.getElementById("stats-area");
-        const noteField = document.getElementById("text");
-        const topicField = document.getElementById("topic");
 
-        // UI Feedback
-        btn.innerText = "Thinking...";
+        if (!topicEl.value || !noteEl.value) {
+          return alert("Please enter both a topic and notes.");
+        }
+
+        btn.innerText = "Analyzing...";
         btn.disabled = true;
 
-        const currentInput = noteField.value;
-        const combinedContext = chatHistory
-          ? `Previous Context: ${chatHistory}\n\nNew Answer: ${currentInput}`
-          : currentInput;
+        try {
+          const response = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              topic: topicEl.value,
+              context: noteEl.value,
+            }),
+          });
 
+          if (!response.ok) throw new Error("Server Error");
+          const data = await response.json();
+
+          // Update Left Pane
+          document.getElementById("validation-stats").style.display = "block";
+          document.getElementById("score-text").innerText = data.score;
+          document.getElementById("score-bar").value = data.score;
+          document.getElementById("source-label").innerText = data.source;
+
+          // Start Interview in Right Pane
+          appendMessage("ai", data.message);
+          lastAiQuestion = data.message; // Store for the next chat turn
+          isGrounded = true;
+          updateStats(data.stats);
+        } catch (e) {
+          appendMessage(
+            "ai",
+            "Error connecting to Orchestrator. Is the backend running?",
+          );
+          console.error(e);
+        } finally {
+          btn.innerText = "Analyze & Ground AI";
+          btn.disabled = false;
+        }
+      }
+
+      async function sendChat() {
+        if (!isGrounded) return alert("Please ingest knowledge first!");
+
+        const inputField = document.getElementById("chat-input");
+        const userMsg = inputField.value.trim();
+        if (!userMsg) return;
+
+        // 1. Show user message immediately
+        appendMessage("user", userMsg);
+        inputField.value = "";
+
+        const topic = document.getElementById("topic").value;
+
+        // 2. Prepare Payload using our persistent variable
         const payload = {
-          topic: topicField.value,
-          context: combinedContext,
+          topic: topic,
+          context: `Last Question: ${lastAiQuestion}\nUser Answer: ${userMsg}`,
         };
 
         try {
-          const res = await fetch("/chat", {
+          const response = await fetch("/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           });
 
-          if (!res.ok) throw new Error("Server Error");
+          if (!response.ok) throw new Error("Server error during chat.");
 
-          const data = await res.json();
+          const data = await response.json();
+          appendMessage("ai", data.message);
 
-          resultArea.style.display = "block";
-          document.getElementById("source").innerText = data.source;
-          document.getElementById("response").innerText = data.message;
-
-          if (data.score !== undefined) {
+          if (data.score && data.score > 0) {
+            document.getElementById("score-text").innerText = data.score;
             document.getElementById("score-bar").value = data.score;
           }
-
-          chatHistory = `AI Question: ${data.message}`;
-
-          noteField.value = "";
-          noteField.placeholder =
-            "Type your answer to the AI's question here...";
-          btn.innerText = "Send Answer";
-
-          // Stats
-          if (data.stats) {
-            statsArea.style.display = "block";
-            document.getElementById("tokens").innerText =
-              data.stats.eval_count || 0;
-            document.getElementById("load").innerText = (
-              data.stats.load_duration / 1e9
-            ).toFixed(2);
-            document.getElementById("total").innerText = (
-              data.stats.total_duration / 1e9
-            ).toFixed(2);
-          }
+          lastAiQuestion = data.message;
+          updateStats(data.stats);
         } catch (e) {
-          alert("Connection Failed. Check Elixir/Python logs.");
-        } finally {
-          btn.disabled = false;
+          appendMessage(
+            "ai",
+            "The tutor is having trouble responding. Check logs.",
+          );
+          console.error(e);
         }
+      }
+
+      function appendMessage(role, text) {
+        const win = document.getElementById("chat-window");
+        const div = document.createElement("div");
+        div.className = `msg ${role}`;
+        div.innerText = text;
+        win.appendChild(div);
+
+        // Use smooth scroll to keep bottom in view
+        win.scrollTo({ top: win.scrollHeight, behavior: "smooth" });
+      }
+
+      function updateStats(stats) {
+        if (!stats) return;
+        document.getElementById("stat-tokens").innerText =
+          stats.eval_count || 0;
+        document.getElementById("stat-lat").innerText = (
+          (stats.total_duration || 0) / 1e9
+        ).toFixed(2);
       }
     </script>
   </body>

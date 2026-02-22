@@ -17,26 +17,44 @@ defmodule SovNote.WebRouter do
     topic = conn.body_params["topic"]
     text = conn.body_params["context"]
 
+    # We call the router and handle the variety of successful returns
     case SovNote.InferenceRouter.analyze_and_interview(topic, text) do
+      # Match the 4-tuple (Initial Ingestion)
       {:ok, source, response, score} ->
-        body =
-          Jason.encode!(%{
-            source: source,
-            message: response["message"]["content"],
-            score: score,
-            stats: %{
-              eval_count: response["eval_count"],
-              load_duration: response["load_duration"],
-              total_duration: response["total_duration"]
-            }
-          })
+        send_json_success(conn, source, response, score)
 
-        send_resp(conn, 200, body)
+      # Match the 3-tuple (Chat Follow-up)
+      {:ok, source, response} ->
+        send_json_success(conn, source, response, 0.0)
 
-      error ->
-        Logger.error("Inference failed: #{inspect(error)}")
-        send_resp(conn, 500, Jason.encode!(%{error: "Internal Server Error"}))
+      # Catch actual errors
+      {:error, _type, reason} ->
+        Logger.error("Inference Error: #{inspect(reason)}")
+        send_resp(conn, 500, Jason.encode!(%{error: "AI Timeout"}))
+
+      other ->
+        Logger.error("Unexpected response shape: #{inspect(other)}")
+        send_resp(conn, 500, "Internal Server Error")
     end
+  end
+
+  # Helper function to keep code clean
+  defp send_json_success(conn, source, response, score) do
+    body =
+      Jason.encode!(%{
+        source: source,
+        message: response["message"]["content"],
+        score: score,
+        stats: %{
+          eval_count: response["eval_count"] || 0,
+          load_duration: response["load_duration"] || 0,
+          total_duration: response["total_duration"] || 0
+        }
+      })
+
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(200, body)
   end
 
   match _ do
