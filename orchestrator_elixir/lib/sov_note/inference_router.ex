@@ -4,6 +4,7 @@ defmodule SovNote.InferenceRouter do
   # Update these to use correct URL for HPC
   @hpc_url "http://vllm-service.default.svc.cluster.local:8000/v1/chat/completions"
   @ollama_url "http://host.docker.internal:11434/api/chat"
+  @python_engine_url "http://ai-engine:8000/analyze"
 
   def process_query(prompt) do
     payload =
@@ -40,9 +41,53 @@ defmodule SovNote.InferenceRouter do
     end
   end
 
-  def start_interview(topic, score, context) do
-    prompt =
-      "I am a study assistant. Topic: #{topic}. Score: #{score}. Wiki: #{context}. Ask one question."
+  def analyze_and_interview(topic, text) do
+    payload = Jason.encode!(%{topic: topic, text: text})
+
+    Logger.info("Sending to Python: #{payload}")
+
+    case HTTPoison.post(@python_engine_url, payload, [{"Content-Type", "application/json"}]) do
+      {:ok, %{status_code: 200, body: body}} ->
+        analysis = Jason.decode!(body)
+        Logger.info("Received from Python: #{inspect(analysis)}")
+
+        score = analysis["completeness_score"]
+        wiki = analysis["wiki_summary"]
+
+        case start_interview(topic, score, wiki) do
+          {:ok, source, response} ->
+            {:ok, source, response, score}
+
+          error ->
+            error
+        end
+
+      _error ->
+        case start_interview(topic, 0.0, "Could not fetch wiki context.") do
+          {:ok, source, response} ->
+            {:ok, source, response, 0.0}
+
+          error ->
+            error
+        end
+    end
+  end
+
+  def start_interview(topic, completeness_score, wiki_context) do
+    prompt = """
+    SYSTEM: You are a strict but encouraging Socratic tutor.
+    CONTEXT: The user is learning about "#{topic}".
+    FACTUAL DATA FROM WIKIPEDIA: "#{wiki_context}"
+    USER NOTE SCORE: #{completeness_score}%
+
+    TASK:
+    1. Compare the user's notes to the Wikipedia data.
+    2. If the user's note is factually incorrect, gently correct them using the Wikipedia data.
+    3. If the score is low, identify a major missing concept.
+    4. Ask ONE challenging question to help them improve.
+
+    Keep your response brief and focused on the topic.
+    """
 
     process_query(prompt)
   end

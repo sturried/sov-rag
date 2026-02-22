@@ -6,13 +6,15 @@ A high-performance, decentralized study system built for **Digital Sovereignty**
 
 The system consists of two primary microservices and a native inference engine:
 
-1. **Orchestrator (Elixir/Erlang):** A fault-tolerant gateway using a **Circuit Breaker** pattern to route requests between an HPC cluster and a local Mac M4.
+1. **Orchestrator (Elixir/Erlang):** A fault-tolerant gateway using a **Circuit Breaker** pattern to route requests between an HPC cluster and a local device.
 2. **AI Engine (Python/FastAPI):** Handles NLP tasks using **Naive Bayes** for classification and **SentenceTransformers** (BERT) for semantic completeness scoring.
-3. **Sovereign Node (Ollama):** Native Mac M4 inference using Apple Silicon's Unified Memory.
+3. **Sovereign Node (Ollama):** Native inference using local memory.
 
 ---
 
 ## Installation & Setup
+
+Note: I've tested this on a MacBook Pro M4
 
 ### 1. Native Mac Setup (The Sovereign Node)
 

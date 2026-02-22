@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SovNote Dashboard</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css"
+    />
+    <style>
+      body {
+        max-width: 800px;
+        margin: auto;
+        padding: 20px;
+      }
+      .card {
+        border: 1px solid #ccc;
+        padding: 15px;
+        margin-top: 20px;
+        border-radius: 8px;
+      }
+      #response {
+        white-space: pre-wrap;
+        background: #222;
+        color: #0f0;
+        padding: 10px;
+        min-height: 50px;
+      }
+      .stat-label {
+        font-weight: bold;
+        color: #555;
+      }
+      .performance-box {
+        margin-top: 15px;
+        padding: 10px;
+        background-color: rgba(255, 255, 255, 0.05);
+        border: 1px dashed #444;
+        border-radius: 4px;
+        font-size: 0.85em;
+        color: #ccc;
+      }
+
+      .performance-box span {
+        margin-right: 10px;
+      }
+
+      textarea:focus {
+        border-color: #007bff;
+        outline: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>SovNote: Sovereign AI</h1>
+    <p>
+      Submit your notes for semantic validation against Wikipedia and Socratic
+      interviewing.
+    </p>
+
+    <div class="card">
+      <label for="topic">Topic</label>
+      <input type="text" id="topic" placeholder="e.g., Docker" />
+
+      <label for="text">Your Note</label>
+      <textarea
+        id="text"
+        rows="5"
+        placeholder="Enter your study notes here..."
+      ></textarea>
+
+      <button onclick="analyze()">Validate & Start Interview</button>
+    </div>
+
+    <div id="result-area" style="display: none">
+      <h3>AI Analysis & Interview</h3>
+
+      <p>
+        <span class="stat-label">Inference Source:</span>
+        <mark id="source"></mark>
+      </p>
+
+      <p><span class="stat-label">Completeness Score:</span></p>
+      <progress
+        id="score-bar"
+        value="0"
+        max="100"
+        style="width: 100%"
+      ></progress>
+
+      <div id="response" class="card"></div>
+
+      <div id="stats-area" class="performance-box" style="display: none">
+        <strong>Performance Monitor</strong><br />
+        <span>Tokens: <span id="tokens">0</span></span>
+        <span>Load: <span id="load">0</span>s</span>
+        <span>Total: <span id="total">0</span>s</span>
+      </div>
+    </div>
+
+    <script>
+      let chatHistory = "";
+
+      async function analyze() {
+        const btn = document.querySelector("button");
+        const resultArea = document.getElementById("result-area");
+        const statsArea = document.getElementById("stats-area");
+        const noteField = document.getElementById("text");
+        const topicField = document.getElementById("topic");
+
+        // UI Feedback
+        btn.innerText = "Thinking...";
+        btn.disabled = true;
+
+        const currentInput = noteField.value;
+        const combinedContext = chatHistory
+          ? `Previous Context: ${chatHistory}\n\nNew Answer: ${currentInput}`
+          : currentInput;
+
+        const payload = {
+          topic: topicField.value,
+          context: combinedContext,
+        };
+
+        try {
+          const res = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!res.ok) throw new Error("Server Error");
+
+          const data = await res.json();
+
+          resultArea.style.display = "block";
+          document.getElementById("source").innerText = data.source;
+          document.getElementById("response").innerText = data.message;
+
+          if (data.score !== undefined) {
+            document.getElementById("score-bar").value = data.score;
+          }
+
+          chatHistory = `AI Question: ${data.message}`;
+
+          noteField.value = "";
+          noteField.placeholder =
+            "Type your answer to the AI's question here...";
+          btn.innerText = "Send Answer";
+
+          // Stats
+          if (data.stats) {
+            statsArea.style.display = "block";
+            document.getElementById("tokens").innerText =
+              data.stats.eval_count || 0;
+            document.getElementById("load").innerText = (
+              data.stats.load_duration / 1e9
+            ).toFixed(2);
+            document.getElementById("total").innerText = (
+              data.stats.total_duration / 1e9
+            ).toFixed(2);
+          }
+        } catch (e) {
+          alert("Connection Failed. Check Elixir/Python logs.");
+        } finally {
+          btn.disabled = false;
+        }
+      }
+    </script>
+  </body>
+</html>

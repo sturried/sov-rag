@@ -28,26 +28,30 @@ class Note(BaseModel):
     text: str
     topic: str
 
+
 @app.post("/analyze")
 def ingest_note(note: Note):
+    wikipedia.set_user_agent("SovNoteStudyTool/1.0 (contact: student@example.com)")
+    
     X_test = vectorizer.transform([note.text])
     category = classifier.predict(X_test)[0]
 
     try:
-        wiki_summary = wikipedia.summary(note.topic, sentences=3)
+        search_results = wikipedia.search(note.topic)
+        if not search_results:
+            raise Exception("No results found")
+            
+        wiki_summary = wikipedia.summary(search_results[0], sentences=3, auto_suggest=False)
         
-        # Create Vector Embeddings
         note_emb = embedder.encode(note.text, convert_to_tensor=True)
         wiki_emb = embedder.encode(wiki_summary, convert_to_tensor=True)
-        
-        # Calculate Cosine Similarity
         similarity = util.cos_sim(note_emb, wiki_emb).item()
         completeness_score = round(similarity * 100, 2)
-    except wikipedia.exceptions.DisambiguationError:
-        wiki_summary = "Topic too broad. Please refine."
-        completeness_score = 0.0
-    except Exception:
-        wiki_summary = "Topic not found."
+        
+    except Exception as e:
+        print(f"Wiki API Failure: {e}")
+        # If API fails, provide generic but accurate context
+        wiki_summary = "Topic context unavailable via Wikipedia API. Reverting to internal LLM knowledge."
         completeness_score = 0.0
         
     return {

@@ -4,7 +4,7 @@ defmodule SovNote.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      # Web interface planned
+      {Plug.Cowboy, scheme: :http, plug: SovNote.WebRouter, options: [port: 4000]}
     ]
 
     opts = [strategy: :one_for_one, name: SovNote.Supervisor]
