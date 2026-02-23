@@ -1,12 +1,35 @@
 defmodule SovNote.InferenceRouter do
   require Logger
 
-  # Update these to use correct URL for HPC
+  # URLs
   @hpc_url "http://vllm-service.default.svc.cluster.local:8000/v1/chat/completions"
   @ollama_url "http://host.docker.internal:11434/api/chat"
-  @python_engine_url "http://ai-engine:8000/analyze"
 
+  defp python_engine_url do
+    base = System.get_env("PYTHON_ENGINE_URL", "http://ai-engine:8000")
+    base <> "/analyze"
+  end
+
+  @doc """
+  Entry point for processing a raw prompt.
+  Determines whether to hit the Local/Ollama or the HPC Cluster (vLLM)
+  based on the RUN_MODE environment variable.
+  """
   def process_query(prompt) do
+    # 1. Determine environment
+    # "local" targets Ollama first, everything else targets HPC first.
+    run_mode = System.get_env("RUN_MODE", "cluster")
+    is_local? = String.contains?(run_mode, "local")
+
+    {primary_url, label} =
+      if is_local? do
+        {@ollama_url, :local_inference}
+      else
+        {@hpc_url, :hpc_cluster}
+      end
+
+    Logger.info("[Inference] Mode: #{run_mode} | Primary Route: #{label}")
+
     payload =
       Jason.encode!(%{
         model: "llama3",
@@ -14,30 +37,13 @@ defmodule SovNote.InferenceRouter do
         stream: false
       })
 
-    # Try HPC
-    case HTTPoison.post(@hpc_url, payload, [{"Content-Type", "application/json"}],
-           recv_timeout: 3000
-         ) do
-      {:ok, %{status_code: 200, body: body}} ->
-        {:ok, :hpc_cluster, Jason.decode!(body)}
+    # 2. Execute primary request
+    case perform_request(primary_url, payload, label) do
+      {:ok, body} ->
+        {:ok, label, body}
 
-      _error ->
-        fallback_to_local_mac(payload)
-    end
-  end
-
-  defp fallback_to_local_mac(payload) do
-    Logger.warning("HPC Cluster unavailable. Failing over to Local Mac M4 (Ollama).")
-
-    case HTTPoison.post(@ollama_url, payload, [{"Content-Type", "application/json"}],
-           recv_timeout: 15000
-         ) do
-      {:ok, %{status_code: 200, body: body}} ->
-        {:ok, :local_mac, Jason.decode!(body)}
-
-      {:error, reason} ->
-        Logger.error("Ollama connection failed: #{inspect(reason)}")
-        {:error, :total_system_failure, "Check if Ollama is running with OLLAMA_HOST=0.0.0.0"}
+      {:error, _reason} ->
+        handle_fallback(payload, is_local?)
     end
   end
 
@@ -45,12 +51,14 @@ defmodule SovNote.InferenceRouter do
     is_followup = String.contains?(text, "Last Question:")
 
     if is_followup do
-      Logger.info("CHAT FOLLOW-UP detected for topic: #{topic}")
+      Logger.info("[Router] CHAT FOLLOW-UP detected for topic: #{topic}")
 
       case start_interview(topic, 0.0, "Continue Socratic dialogue.", text) do
         {:ok, source, response} = result ->
-          # LOG THE RESPONSE
-          Logger.info("AI Response (Follow-up) from #{source}: #{response["message"]["content"]}")
+          Logger.info(
+            "[Router] AI Response (Follow-up) from #{source}: #{response["message"]["content"]}"
+          )
+
           result
 
         error ->
@@ -58,12 +66,12 @@ defmodule SovNote.InferenceRouter do
       end
     else
       payload = Jason.encode!(%{topic: topic, text: text})
-      Logger.info("INITIAL INGESTION for topic: #{topic}")
+      Logger.info("[Router] INITIAL INGESTION for topic: #{topic}")
 
-      case HTTPoison.post(@python_engine_url, payload, [{"Content-Type", "application/json"}]) do
+      case HTTPoison.post(python_engine_url(), payload, [{"Content-Type", "application/json"}]) do
         {:ok, %{status_code: 200, body: body}} ->
           analysis = Jason.decode!(body)
-          Logger.info("Python Analysis: #{inspect(analysis)}")
+          Logger.info("[Router] Python Analysis: #{inspect(analysis)}")
 
           score = analysis["completeness_score"]
           wiki = analysis["wiki_summary"]
@@ -71,7 +79,7 @@ defmodule SovNote.InferenceRouter do
           case start_interview(topic, score, wiki, text) do
             {:ok, source, response} ->
               Logger.info(
-                "AI Response (Initial) from #{source}: #{response["message"]["content"]}"
+                "[Router] AI Response (Initial) from #{source}: #{response["message"]["content"]}"
               )
 
               {:ok, source, response, score}
@@ -81,14 +89,16 @@ defmodule SovNote.InferenceRouter do
           end
 
         _error ->
-          Logger.error("Python Engine Unreachable. Using fallback context.")
+          Logger.error(
+            "[Router] Python Engine Unreachable at #{python_engine_url()}. Using fallback context."
+          )
+
           start_interview(topic, 0.0, "Fallback context.", text)
       end
     end
   end
 
   def start_interview(topic, completeness_score, wiki_context, user_input) do
-    # Determine if this is a follow-up answer or a fresh note
     is_followup = String.contains?(user_input, "Last Question:")
 
     role_instruction =
@@ -119,5 +129,43 @@ defmodule SovNote.InferenceRouter do
     """
 
     process_query(prompt)
+  end
+
+  defp handle_fallback(payload, was_local?) do
+    {fallback_url, label} =
+      if was_local? do
+        {@hpc_url, :hpc_cluster}
+      else
+        {@ollama_url, :local_inference}
+      end
+
+    Logger.warning("[Inference] Primary route failed. Attempting fallback to #{label}...")
+
+    case perform_request(fallback_url, payload, label) do
+      {:ok, body} ->
+        {:ok, label, body}
+
+      {:error, reason} ->
+        Logger.error("[Inference] TOTAL SYSTEM FAILURE: #{inspect(reason)}")
+        {:error, :total_system_failure, "No inference engines reachable."}
+    end
+  end
+
+  defp perform_request(url, payload, label) do
+    # local/Ollama needs more time to load weights into Unified Memory/GPU
+    timeout = if label == :local_inference, do: 15_000, else: 2_000
+
+    case HTTPoison.post(url, payload, [{"Content-Type", "application/json"}],
+           recv_timeout: timeout
+         ) do
+      {:ok, %{status_code: 200, body: body}} ->
+        {:ok, Jason.decode!(body)}
+
+      {:error, reason} ->
+        {:error, reason}
+
+      %{status_code: status} ->
+        {:error, "HTTP Error: #{status}"}
+    end
   end
 end

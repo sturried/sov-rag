@@ -1,5 +1,6 @@
 defmodule SovNote.WebRouter do
   use Plug.Router
+  require Logger
 
   plug(:match)
   plug(Plug.Static, at: "/", from: :sov_note)

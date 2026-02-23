@@ -3,6 +3,9 @@ services:
     build: ./ai_engine_python
     ports:
       - "8000:8000"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     networks:
       - sov-net
 
@@ -10,6 +13,9 @@ services:
     build: ./orchestrator_elixir
     environment:
       - PYTHON_ENGINE_URL=http://ai-engine:8000
+      - RUN_MODE=local_mac
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "4000:4000"
     networks:

@@ -12,9 +12,10 @@ The system consists of two primary microservices and a native inference engine:
 
 ---
 
-## Installation & Setup
+Some information up front: So far, I've only tested this on MacOS. Theoretically it should work on other OS, since there is an environment detection function, I just haven't tested it yet.
+The Bayes classifier is also intentionally trained on a small, hardcoded dataset, to avoid performance issues during inference. This will be changed in the future.
 
-Note: I've tested this on a MacBook Pro M4
+## Installation & Setup
 
 ### 1. Native Mac Setup (The Sovereign Node)
 
@@ -98,25 +99,18 @@ chat.(chat)
 
 sebij@sebook ~ % curl -X POST http://localhost:8000/analyze \
  -H "Content-Type: application/json" \
- -d '{"topic": "Docker", "text": "Docker is a tool that uses containers."}'
-
-Response:
-{"category":"DevOps","completeness_score":0.0,"wiki_summary":"Topic not found.","knowledge_gaps":"High"}
-
-sebij@sebook ~ % curl -X POST http://localhost:8000/analyze \
- -H "Content-Type: application/json" \
  -d '{"topic": "Kubernetes", "text": "Kubernetes is a system for automating deployment and scaling of containerized applications."}'
 
 Response
 {"category":"DevOps","completeness_score":74.13,"wiki_summary":"Kubernetes (), also known as K8s, is an open-source container orchestration system for automating software deployment, scaling, and management. Originally designed by Google, the project is now maintained by a worldwide community of contributors, and the trademark is held by the Cloud Native Computing Foundation.\nThe name Kubernetes comes from the Ancient Greek term κυβερνήτης, kubernḗtēs (helmsman, pilot), which is also the origin of the words cybernetics and (through Latin) governor.","knowledge_gaps":"Low}
 
 Also see image.png for example output from Elixir IEX shell:
-![Example for automatic switching between HPC and local LLM](https://github.com/sturried/sov-rag/blob/web-interface/z_doc_imgs/elixir_shell_test.png)
+![Example for automatic switching between HPC and local LLM](z_doc_imgs/elixir_shell_test.png)
 
 Logging features:
-![Logging](https://github.com/sturried/sov-rag/blob/web-interface/z_doc_imgs/logging.png)
+![Logging](/z_doc_imgs/logging.png)
 
 WebUI:
-![Web UI Chat Interface](https://github.com/sturried/sov-rag/blob/web-interface/z_doc_imgs/web_ui_chat.png)
+![Web UI Chat Interface](z_doc_imgs/web_ui_chat.png)
 
 **Disclaimer:** Note that this ReadME has been partially written using LLMs.
