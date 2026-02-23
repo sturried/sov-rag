@@ -15,9 +15,8 @@ defmodule SovNote.InferenceRouter do
   Determines whether to hit the Local/Ollama or the HPC Cluster (vLLM)
   based on the RUN_MODE environment variable.
   """
+
   def process_query(prompt) do
-    # 1. Determine environment
-    # "local" targets Ollama first, everything else targets HPC first.
     run_mode = System.get_env("RUN_MODE", "cluster")
     is_local? = String.contains?(run_mode, "local")
 
@@ -152,7 +151,6 @@ defmodule SovNote.InferenceRouter do
   end
 
   defp perform_request(url, payload, label) do
-    # local/Ollama needs more time to load weights into Unified Memory/GPU
     timeout = if label == :local_inference, do: 15_000, else: 2_000
 
     case HTTPoison.post(url, payload, [{"Content-Type", "application/json"}],
