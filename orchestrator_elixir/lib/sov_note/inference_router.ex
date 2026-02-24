@@ -16,6 +16,7 @@ defmodule SovNote.InferenceRouter do
   based on the RUN_MODE environment variable.
   """
 
+  # Decide between models
   def process_query(prompt) do
     run_mode = System.get_env("RUN_MODE", "cluster")
     is_local? = String.contains?(run_mode, "local")
@@ -36,7 +37,7 @@ defmodule SovNote.InferenceRouter do
         stream: false
       })
 
-    # 2. Execute primary request
+    # Execute primary request
     case perform_request(primary_url, payload, label) do
       {:ok, body} ->
         {:ok, label, body}
@@ -46,9 +47,11 @@ defmodule SovNote.InferenceRouter do
     end
   end
 
+  # Initial ingestion / followup dialogue logic
   def analyze_and_interview(topic, text) do
     is_followup = String.contains?(text, "Last Question:")
 
+    # Followup
     if is_followup do
       Logger.info("[Router] CHAT FOLLOW-UP detected for topic: #{topic}")
 
@@ -63,6 +66,8 @@ defmodule SovNote.InferenceRouter do
         error ->
           error
       end
+
+      # Initial ingestion
     else
       payload = Jason.encode!(%{topic: topic, text: text})
       Logger.info("[Router] INITIAL INGESTION for topic: #{topic}")
@@ -97,6 +102,7 @@ defmodule SovNote.InferenceRouter do
     end
   end
 
+  # Socratic interview prompting
   def start_interview(topic, completeness_score, wiki_context, user_input) do
     is_followup = String.contains?(user_input, "Last Question:")
 
@@ -130,6 +136,7 @@ defmodule SovNote.InferenceRouter do
     process_query(prompt)
   end
 
+  # Fallback, incase first URL not available
   defp handle_fallback(payload, was_local?) do
     {fallback_url, label} =
       if was_local? do
@@ -150,6 +157,7 @@ defmodule SovNote.InferenceRouter do
     end
   end
 
+  # Resilience and performance
   defp perform_request(url, payload, label) do
     timeout = if label == :local_inference, do: 15_000, else: 2_000
 
